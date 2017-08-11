@@ -3,11 +3,8 @@ package org.pentaho.di.jobentry.deepforecast;
 import org.apache.commons.io.FileUtils;
 import org.datavec.api.records.reader.SequenceRecordReader;
 import org.datavec.api.records.reader.impl.csv.CSVNLinesSequenceRecordReader;
-import org.datavec.api.records.reader.impl.csv.CSVSequenceRecordReader;
 import org.datavec.api.split.FileSplit;
-import org.datavec.api.split.NumberedFileInputSplit;
 import org.deeplearning4j.datasets.datavec.SequenceRecordReaderDataSetIterator;
-import org.deeplearning4j.eval.RegressionEvaluation;
 import org.deeplearning4j.nn.api.OptimizationAlgorithm;
 import org.deeplearning4j.nn.conf.BackpropType;
 import org.deeplearning4j.nn.conf.MultiLayerConfiguration;
@@ -18,7 +15,6 @@ import org.deeplearning4j.nn.conf.layers.RnnOutputLayer;
 import org.deeplearning4j.nn.multilayer.MultiLayerNetwork;
 import org.deeplearning4j.nn.weights.WeightInit;
 import org.deeplearning4j.util.ModelSerializer;
-import org.hibernate.sql.Update;
 import org.nd4j.linalg.activations.Activation;
 import org.nd4j.linalg.api.ndarray.INDArray;
 import org.nd4j.linalg.dataset.DataSet;
@@ -120,7 +116,10 @@ public class DeepForecastJob {
         if(!resultsDir.exists()) {
             resultsDir.mkdirs();
         }
-        Path output = Paths.get(resultsDir + File.separator + "forecast" + (System.currentTimeMillis() / 1000) + ".csv");
+
+        long id = System.currentTimeMillis() / 1000;
+        Path check = Paths.get(resultsDir + File.separator + "check" + id + ".csv");
+        Path output = Paths.get(resultsDir + File.separator + "forecast" + id + ".csv");
 
         Updater updater = getUpdater(prop.getProperty("updater", "NESTEROVS"));
         Activation activation = getActivation(prop.getProperty("activation", "TANH"));
@@ -131,8 +130,8 @@ public class DeepForecastJob {
         int tBPTTLength = Integer.parseInt(prop.getProperty("tBPTTLength", "30"));
         int totalSize = rawStrings.size() - timeSeriesSize;
         int numberOfBatches = totalSize / miniBatchSize;
-        int nrTrainBatches = (int) (numberOfBatches * 0.8);
-        int nrTestBatches = numberOfBatches - nrTrainBatches;
+        int nrTrainBatches = numberOfBatches - 1;
+        int nrTestBatches = 1;
         int trainSize = nrTrainBatches * miniBatchSize;
         int testSize = nrTestBatches * miniBatchSize;
         int lostSize = totalSize - (trainSize + testSize);
@@ -195,6 +194,8 @@ public class DeepForecastJob {
                     .weightInit(WeightInit.XAVIER)
                     .learningRate(Double.parseDouble(prop.getProperty("learningRate", "0.01")))
                     .updater(updater)
+                    .momentum(Double.parseDouble(prop.getProperty("momentum", "0.9")))
+                    .rmsDecay(Double.parseDouble(prop.getProperty("rmsDecay", "0.95")))
                     .regularization(Boolean.parseBoolean(prop.getProperty("regularization", "false")))
                     .dropOut(Double.parseDouble(prop.getProperty("dropOut", "0.0")))
                     .l1(Double.parseDouble(prop.getProperty("l1", "0.0")))
@@ -217,52 +218,25 @@ public class DeepForecastJob {
                 net.fit(trainDataIter);
                 trainDataIter.reset();
                 LOGGER.info("Epoch " + i + " complete.");
-
-                RegressionEvaluation evaluation = new RegressionEvaluation(getTarget() == null ?
-                        numOfVariables : targetIdxs.size());
-
-                while (testDataIter.hasNext()) {
-                    DataSet t = testDataIter.next();
-                    INDArray features = t.getFeatureMatrix();
-                    INDArray labels = t.getLabels();
-                    INDArray predicted = net.output(features, true);
-
-                    evaluation.evalTimeSeries(labels, predicted);
-                }
-                testDataIter.reset();
             }
         }
+
+        DataSet t;
+        INDArray checkFit = null;
 
         while (trainDataIter.hasNext()) {
-            DataSet t = trainDataIter.next();
-            net.rnnTimeStep(t.getFeatureMatrix());
+            t = trainDataIter.next();
+            checkFit = net.rnnTimeStep(t.getFeatureMatrix());
         }
-        trainDataIter.reset();
+        normalizer.revertLabels(checkFit);
+        INDArray checkArr = checkFit.get(NDArrayIndex.interval(checkFit.size(0) - 1, checkFit.size(0)), NDArrayIndex.all(), NDArrayIndex.all()).getRow(0);
 
-        INDArray predicted = null;
-        while (testDataIter.hasNext()) {
-            DataSet t = testDataIter.next();
-            predicted = net.rnnTimeStep(t.getFeatureMatrix());
-        }
-        testDataIter.reset();
-
+        t = testDataIter.next();
+        INDArray predicted = net.rnnTimeStep(t.getFeatureMatrix());
         normalizer.revertLabels(predicted);
-
         INDArray result = predicted.get(NDArrayIndex.interval(0, 1), NDArrayIndex.all(), NDArrayIndex.all()).getRow(0);
 
-        if ( getTarget() == null ) {
-            Files.write(output, header.concat(System.lineSeparator()).getBytes(),
-                    StandardOpenOption.APPEND, StandardOpenOption.CREATE);
-        } else {
-            int outI = 0;
-            while (outI < targetIdxs.size() - 1){
-                Files.write(output, targets.get(outI).concat(",").getBytes(),
-                        StandardOpenOption.APPEND, StandardOpenOption.CREATE);
-                outI++;
-            }
-            Files.write(output, targets.get(outI).concat(System.lineSeparator()).getBytes(),
-                    StandardOpenOption.APPEND, StandardOpenOption.CREATE);
-        }
+        genHeader(output, header, targetIdxs, targets);
         for (int i = 1; i <= Integer.parseInt(getForecastSteps()); i++) {
             int j;
             String outputString = "";
@@ -272,6 +246,9 @@ public class DeepForecastJob {
             Files.write(output, outputString.concat(result.getDouble(j, i) + System.lineSeparator()).getBytes(), StandardOpenOption.APPEND, StandardOpenOption.CREATE);
         }
 
+        genHeader(check, header, targetIdxs, targets);
+        logCheck(checkArr, result, check);
+
         if (getModelName() != null) {
             File model = new File(resultsDir + File.separator + getModelName() + ".zip");
             ModelSerializer.writeModel(net, model, Boolean.parseBoolean(prop.getProperty("saveUpdater", "false")));
@@ -280,8 +257,41 @@ public class DeepForecastJob {
         FileUtils.deleteDirectory(tempDir);
     }
 
+    private static void logCheck(INDArray checkArr, INDArray result, Path check) throws IOException {
+        for (int i = 0; i <= Integer.parseInt(getForecastSteps()); i++) {
+            int j;
+            String outputString = "";
+            for (j = 0; j < checkArr.size(0) - 1; j++) {
+                outputString = outputString.concat(checkArr.getDouble(j, i) + ",");
+            }
+            Files.write(check, outputString.concat(checkArr.getDouble(j, i) + System.lineSeparator()).getBytes(), StandardOpenOption.APPEND, StandardOpenOption.CREATE);
+        }
+        int j;
+        String outputString = "";
+        for (j = 0; j < result.size(0) - 1; j++) {
+            outputString = outputString.concat(result.getDouble(j, 0) + ",");
+        }
+        Files.write(check, outputString.concat(result.getDouble(j, 0) + System.lineSeparator()).getBytes(), StandardOpenOption.APPEND, StandardOpenOption.CREATE);
+    }
+
+    private static void genHeader(Path path, String header, List<Integer> targetIdxs, List<String> targets) throws IOException {
+        if ( getTarget() == null ) {
+            Files.write(path, header.concat(System.lineSeparator()).getBytes(),
+                    StandardOpenOption.APPEND, StandardOpenOption.CREATE);
+        } else {
+            int outI = 0;
+            while (outI < targetIdxs.size() - 1){
+                Files.write(path, targets.get(outI).concat(",").getBytes(),
+                        StandardOpenOption.APPEND, StandardOpenOption.CREATE);
+                outI++;
+            }
+            Files.write(path, targets.get(outI).concat(System.lineSeparator()).getBytes(),
+                    StandardOpenOption.APPEND, StandardOpenOption.CREATE);
+        }
+    }
+
     private static void prepareTrainAndTest(int trainSize, int testSize, int lostSize, int timeSeriesSize, List<String> rawStrings, List<Integer> targetIdxs) throws IOException {
-        if(!tempDir.exists()) {
+        if (!tempDir.exists()) {
             tempDir.mkdirs();
         } else {
             throw new IOException("Failed trying to create a temp folder, probably the temporary directory you specified already has a folder named 'temp'");
@@ -293,18 +303,7 @@ public class DeepForecastJob {
             for (int j = 0; j < timeSeriesSize; j++) {
                 Files.write(featuresPath, rawStrings.get(i + j).concat(System.lineSeparator()).getBytes(), StandardOpenOption.APPEND, StandardOpenOption.CREATE);
             }
-            if (targetIdxs.size() > 0) {
-                if (targetIdxs.size() == 1) {
-                    Files.write(labelsPath, rawStrings.get(i + timeSeriesSize).split(",")[targetIdxs.get(0)].concat(System.lineSeparator()).getBytes(), StandardOpenOption.APPEND, StandardOpenOption.CREATE);
-                } else {
-                    for(int idx : targetIdxs) {
-                        Files.write(labelsPath, rawStrings.get(i + timeSeriesSize).split(",")[idx].concat(",").getBytes(), StandardOpenOption.APPEND, StandardOpenOption.CREATE);
-                    }
-                    Files.write(labelsPath, System.lineSeparator().getBytes(), StandardOpenOption.APPEND, StandardOpenOption.CREATE);
-                }
-            } else {
-                Files.write(labelsPath, rawStrings.get(i + timeSeriesSize).concat(System.lineSeparator()).getBytes(), StandardOpenOption.APPEND, StandardOpenOption.CREATE);
-            }
+            prepareLabels(targetIdxs, labelsPath, rawStrings, timeSeriesSize, i);
         }
 
         for (int i = trainSize + lostSize; i < testSize + trainSize + lostSize; i++) {
@@ -313,18 +312,22 @@ public class DeepForecastJob {
             for (int j = 0; j < timeSeriesSize; j++) {
                 Files.write(featuresPath, rawStrings.get(i + j).concat(System.lineSeparator()).getBytes(), StandardOpenOption.APPEND, StandardOpenOption.CREATE);
             }
-            if (targetIdxs.size() > 0) {
-                if (targetIdxs.size() == 1) {
-                    Files.write(labelsPath, rawStrings.get(i + timeSeriesSize).split(",")[targetIdxs.get(0)].concat(System.lineSeparator()).getBytes(), StandardOpenOption.APPEND, StandardOpenOption.CREATE);
-                } else {
-                    for(int idx : targetIdxs) {
-                        Files.write(labelsPath, rawStrings.get(i + timeSeriesSize).split(",")[idx].concat(",").getBytes(), StandardOpenOption.APPEND, StandardOpenOption.CREATE);
-                    }
-                    Files.write(labelsPath, System.lineSeparator().getBytes(), StandardOpenOption.APPEND, StandardOpenOption.CREATE);
-                }
+            prepareLabels(targetIdxs, labelsPath, rawStrings, timeSeriesSize, i);
+        }
+    }
+
+    private static void prepareLabels(List<Integer> targetIdxs, Path labelsPath,List<String> rawStrings, int timeSeriesSize, int i) throws IOException{
+        if (targetIdxs.size() > 0) {
+            if (targetIdxs.size() == 1) {
+                Files.write(labelsPath, rawStrings.get(i + timeSeriesSize).split(",")[targetIdxs.get(0)].concat(System.lineSeparator()).getBytes(), StandardOpenOption.APPEND, StandardOpenOption.CREATE);
             } else {
-                Files.write(labelsPath, rawStrings.get(i + timeSeriesSize).concat(System.lineSeparator()).getBytes(), StandardOpenOption.APPEND, StandardOpenOption.CREATE);
+                for (int idx : targetIdxs) {
+                    Files.write(labelsPath, rawStrings.get(i + timeSeriesSize).split(",")[idx].concat(",").getBytes(), StandardOpenOption.APPEND, StandardOpenOption.CREATE);
+                }
+                Files.write(labelsPath, System.lineSeparator().getBytes(), StandardOpenOption.APPEND, StandardOpenOption.CREATE);
             }
+        } else {
+            Files.write(labelsPath, rawStrings.get(i + timeSeriesSize).concat(System.lineSeparator()).getBytes(), StandardOpenOption.APPEND, StandardOpenOption.CREATE);
         }
     }
 
