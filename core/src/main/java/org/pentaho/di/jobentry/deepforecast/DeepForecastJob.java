@@ -22,8 +22,6 @@ import org.nd4j.linalg.dataset.api.iterator.DataSetIterator;
 import org.nd4j.linalg.dataset.api.preprocessor.NormalizerMinMaxScaler;
 import org.nd4j.linalg.indexing.NDArrayIndex;
 import org.nd4j.linalg.lossfunctions.LossFunctions;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.io.IOException;
@@ -38,7 +36,6 @@ import java.util.List;
 import java.util.Properties;
 
 public class DeepForecastJob {
-    private static final Logger LOGGER = LoggerFactory.getLogger(DeepForecastJob.class);
     private static void initFiles(String temp) {
         tempDir = new File(temp + File.separator + "temp");
         trainFeaturesFile = new File(tempDir, "train_features.csv");
@@ -64,9 +61,11 @@ public class DeepForecastJob {
     private static String target;
     private static String temp;
 
+    private static DeepForecastJobEntry meta;
+
     private static int numOfVariables = 0;
 
-    public DeepForecastJob(String filename, String forecastSteps, String toLoadFile, String output, String modelName, String configPath, String target, String temp) {
+    public DeepForecastJob(String filename, String forecastSteps, String toLoadFile, String output, String modelName, String configPath, String target, String temp, DeepForecastJobEntry meta) {
         this.filename = filename;
         this.forecastSteps = forecastSteps;
         this.configPath = configPath;
@@ -75,6 +74,7 @@ public class DeepForecastJob {
         this.modelName = modelName;
         this.target = target;
         this.temp = temp;
+        this.meta = meta;
     }
 
     private static Updater getUpdater(String updater) {
@@ -113,11 +113,9 @@ public class DeepForecastJob {
         if (getConfigPath() != null) {
             prop.load(FileUtils.openInputStream(new File(getConfigPath())));
         }
-        if(!resultsDir.exists()) {
-            resultsDir.mkdirs();
-        }
 
         long id = System.currentTimeMillis() / 1000;
+
         Path check = Paths.get(resultsDir + File.separator + "check" + id + ".csv");
         Path output = Paths.get(resultsDir + File.separator + "forecast" + id + ".csv");
 
@@ -130,8 +128,8 @@ public class DeepForecastJob {
         int tBPTTLength = Integer.parseInt(prop.getProperty("tBPTTLength", "30"));
         int totalSize = rawStrings.size() - timeSeriesSize;
         int numberOfBatches = totalSize / miniBatchSize;
-        int nrTrainBatches = numberOfBatches - 1;
-        int nrTestBatches = 1;
+        int nrTestBatches = (int) (numberOfBatches * Double.parseDouble(prop.getProperty("testRatio","0.2")));
+        int nrTrainBatches = numberOfBatches - nrTestBatches;
         int trainSize = nrTrainBatches * miniBatchSize;
         int testSize = nrTestBatches * miniBatchSize;
         int lostSize = totalSize - (trainSize + testSize);
@@ -148,6 +146,10 @@ public class DeepForecastJob {
             if (targetIdxs.size() == 0) {
                 throw new Exception("Found no columns matching the specified names");
             }
+        }
+
+        if (nrTestBatches <= 1) {
+            throw new Exception("Number of test batches too small, try increasing the testRation configuration in the properties file");
         }
 
         if (Integer.parseInt(getForecastSteps()) >= timeSeriesSize) {
@@ -217,24 +219,33 @@ public class DeepForecastJob {
             for (int i = 0; i < nEpochs; i++) {
                 net.fit(trainDataIter);
                 trainDataIter.reset();
-                LOGGER.info("Epoch " + i + " complete.");
+                meta.logBasic("Epoch " + (i + 1) + " complete.");
             }
         }
 
         DataSet t;
         INDArray checkFit = null;
+        INDArray checkArr;
 
         while (trainDataIter.hasNext()) {
             t = trainDataIter.next();
-            checkFit = net.rnnTimeStep(t.getFeatureMatrix());
+            net.rnnTimeStep(t.getFeatureMatrix());
         }
-        normalizer.revertLabels(checkFit);
-        INDArray checkArr = checkFit.get(NDArrayIndex.interval(checkFit.size(0) - 1, checkFit.size(0)), NDArrayIndex.all(), NDArrayIndex.all()).getRow(0);
+
+        genHeader(check, header, targetIdxs, targets);
+        while (testDataIter.cursor() < (nrTestBatches - 1) * miniBatchSize) {
+            t = testDataIter.next();
+            checkFit =  net.rnnTimeStep(t.getFeatureMatrix());
+            normalizer.revertLabels(checkFit);
+            checkArr = checkFit.get(NDArrayIndex.interval(0, 1), NDArrayIndex.all(), NDArrayIndex.all()).getRow(0);
+            logCheck(checkArr, check);
+        }
 
         t = testDataIter.next();
         INDArray predicted = net.rnnTimeStep(t.getFeatureMatrix());
         normalizer.revertLabels(predicted);
         INDArray result = predicted.get(NDArrayIndex.interval(0, 1), NDArrayIndex.all(), NDArrayIndex.all()).getRow(0);
+        endCheck(check, result);
 
         genHeader(output, header, targetIdxs, targets);
         for (int i = 1; i <= Integer.parseInt(getForecastSteps()); i++) {
@@ -246,9 +257,6 @@ public class DeepForecastJob {
             Files.write(output, outputString.concat(result.getDouble(j, i) + System.lineSeparator()).getBytes(), StandardOpenOption.APPEND, StandardOpenOption.CREATE);
         }
 
-        genHeader(check, header, targetIdxs, targets);
-        logCheck(checkArr, result, check);
-
         if (getModelName() != null) {
             File model = new File(resultsDir + File.separator + getModelName() + ".zip");
             ModelSerializer.writeModel(net, model, Boolean.parseBoolean(prop.getProperty("saveUpdater", "false")));
@@ -257,7 +265,7 @@ public class DeepForecastJob {
         FileUtils.deleteDirectory(tempDir);
     }
 
-    private static void logCheck(INDArray checkArr, INDArray result, Path check) throws IOException {
+    private static void logCheck(INDArray checkArr, Path check) throws IOException {
         for (int i = 0; i <= Integer.parseInt(getForecastSteps()); i++) {
             int j;
             String outputString = "";
@@ -266,6 +274,9 @@ public class DeepForecastJob {
             }
             Files.write(check, outputString.concat(checkArr.getDouble(j, i) + System.lineSeparator()).getBytes(), StandardOpenOption.APPEND, StandardOpenOption.CREATE);
         }
+    }
+
+    private static void endCheck(Path check, INDArray result) throws IOException {
         int j;
         String outputString = "";
         for (j = 0; j < result.size(0) - 1; j++) {

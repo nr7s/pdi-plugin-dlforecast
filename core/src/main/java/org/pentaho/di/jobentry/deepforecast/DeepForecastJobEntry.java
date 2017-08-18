@@ -203,7 +203,7 @@ public class DeepForecastJobEntry extends JobEntryBase implements Cloneable, Job
         String realToLoadFile = environmentSubstitute(getToLoadFile());
         String realModelName = environmentSubstitute(getModelName());
         String realTarget = environmentSubstitute(getTarget());
-        new DeepForecastJob(realFilename, realForecastSteps, realToLoadFile, realOutput, realModelName, realConfigPath, realTarget, realTemp);
+        new DeepForecastJob(realFilename, realForecastSteps, realToLoadFile, realOutput, realModelName, realConfigPath, realTarget, realTemp, DeepForecastJobEntry.this);
 
         try {
             DeepForecastJob.process();
@@ -211,7 +211,7 @@ public class DeepForecastJobEntry extends JobEntryBase implements Cloneable, Job
             result.setNrErrors( 1 );
             result.setResult(false);
             e.printStackTrace();
-            logError(toString(), "Error processing DeepForecastJob: " + e.getMessage());
+            logError(toString(), "Error processing DeepForecastJob: " + e.toString());
         }
 
         return result;
@@ -224,7 +224,7 @@ public class DeepForecastJobEntry extends JobEntryBase implements Cloneable, Job
 
     @Override
     public boolean isUnconditional() {
-        return false;
+        return true;
     }
 
     public static final int getRunConfigurationInt( String desc ) {
