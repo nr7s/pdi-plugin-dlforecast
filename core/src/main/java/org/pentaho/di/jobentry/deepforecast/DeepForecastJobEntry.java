@@ -211,7 +211,7 @@ public class DeepForecastJobEntry extends JobEntryBase implements Cloneable, Job
             result.setNrErrors( 1 );
             result.setResult(false);
             e.printStackTrace();
-            logError(toString(), "Error processing DeepForecastJob: " + e.toString());
+            logError(e.getMessage());
         }
 
         return result;

@@ -153,7 +153,7 @@ public class DeepForecastJob {
         }
 
         if (Integer.parseInt(getForecastSteps()) >= timeSeriesSize) {
-            throw new Exception("Forecast Steps (from dialog) need to be smaller than timeSeriesSize(in config file)");
+            throw new Exception("Forecast Steps (from dialog) need to be smaller than timeSeriesSize (in config file)");
         }
 
         if (miniBatchSize > totalSize / 2) {
