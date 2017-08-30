@@ -1,5 +1,9 @@
+<a href="https://www.pentaho.com/">
+    <img src="https://trello-attachments.s3.amazonaws.com/59354adb4d8effac88d0b57c/59a53d0198c33653a118f940/95e151ea95ba2f020beda2612ed1212a/pentaho-HGC-logo.png" align="right" height="50" />
+</a>
+
 # pdi-plugin-dlforecast
-Time series forecasting plugin for Pentaho Data Integration. Implemented using a simple, configurable DL4J LSTM network.
+Time series forecasting plugin for [Pentaho Data Integration](http://community.pentaho.com/projects/data-integration/). Implemented using a simple, configurable [DL4J](https://deeplearning4j.org/) LSTM network.
 
 ## Table of content
 
