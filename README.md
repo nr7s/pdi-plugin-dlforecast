@@ -1,7 +1,21 @@
 # pdi-plugin-dlforecast
 Time series forecasting plugin for Pentaho Data Integration. Implemented using a simple, configurable DL4J LSTM network.
 
-## Instalation
+## Table of content
+
+- [Pre-requisites](#pre-requisites)
+- [Installation](#installation)
+- [Using the plugin](#using-the-plugin)
+- [Extras](#extras)
+- [To implement](#to-implement)
+
+## Pre-requisites 
+* Maven, version 3+
+* Java JDK 1.8
+* This [settings.xml](https://github.com/pentaho/maven-parent-poms/blob/master/maven-support-files/settings.xml) 
+in your <user-home>/.m2 directory
+
+## Installation
 This refers to Ubuntu but if you are used to your OS you can easily adapt. Any doubts raise an issue or contact me.
 
 1. After cloning/downloading go to the plugin main folder and build the plugin
