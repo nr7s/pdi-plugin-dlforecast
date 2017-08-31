@@ -300,6 +300,8 @@ public class DeepForecastSparkJob {
         }
 
         FileUtils.deleteDirectory(tempDir);
+
+        sc.stop();
     }
 
     private static void logCheck(INDArray checkArr, Path check) throws IOException {
