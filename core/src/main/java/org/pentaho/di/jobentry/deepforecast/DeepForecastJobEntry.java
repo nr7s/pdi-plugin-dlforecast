@@ -23,6 +23,7 @@
 package org.pentaho.di.jobentry.deepforecast;
 
 import java.util.List;
+import java.util.Objects;
 
 import jdk.nashorn.internal.runtime.ConsString;
 import jxl.demo.XML;
@@ -204,9 +205,14 @@ public class DeepForecastJobEntry extends JobEntryBase implements Cloneable, Job
         String realModelName = environmentSubstitute(getModelName());
         String realTarget = environmentSubstitute(getTarget());
         new DeepForecastJob(realFilename, realForecastSteps, realToLoadFile, realOutput, realModelName, realConfigPath, realTarget, realTemp, DeepForecastJobEntry.this);
+        new DeepForecastSparkJob(realFilename, realForecastSteps, realToLoadFile, realOutput, realModelName, realConfigPath, realTarget, realTemp, DeepForecastJobEntry.this);
 
         try {
-            DeepForecastJob.process();
+            if (!Objects.equals(getRunConfigurationCode(getRunConfiguration()), "SPARK")){
+                DeepForecastJob.process();
+            } else {
+                DeepForecastSparkJob.process();
+            }
         } catch (Exception e) {
             result.setNrErrors( 1 );
             result.setResult(false);
