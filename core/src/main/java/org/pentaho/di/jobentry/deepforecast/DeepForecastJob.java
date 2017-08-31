@@ -114,6 +114,7 @@ public class DeepForecastJob {
             prop.load(FileUtils.openInputStream(new File(getConfigPath())));
         }
 
+
         long id = System.currentTimeMillis() / 1000;
 
         Path check = Paths.get(resultsDir + File.separator + "check" + id + ".csv");
@@ -123,7 +124,7 @@ public class DeepForecastJob {
         Activation activation = getActivation(prop.getProperty("activation", "TANH"));
         int nEpochs = Integer.parseInt(prop.getProperty("nEpochs", "50"));
         int miniBatchSize = Integer.parseInt(prop.getProperty("miniBatchSize", "32"));
-        int hiddenNodes = Integer.parseInt(prop.getProperty("hiddenNodes", "10"));
+        int hiddenNodes = Integer.parseInt(prop.getProperty("hiddenNodes", "5"));
         int timeSeriesSize = Integer.parseInt(prop.getProperty("timeSeriesSize", "30"));
         int tBPTTLength = Integer.parseInt(prop.getProperty("tBPTTLength", "30"));
         int totalSize = rawStrings.size() - timeSeriesSize;
@@ -194,7 +195,7 @@ public class DeepForecastJob {
                     .optimizationAlgo(OptimizationAlgorithm.STOCHASTIC_GRADIENT_DESCENT)
                     .iterations(1)
                     .weightInit(WeightInit.XAVIER)
-                    .learningRate(Double.parseDouble(prop.getProperty("learningRate", "0.01")))
+                    .learningRate(Double.parseDouble(prop.getProperty("learningRate", "0.001")))
                     .updater(updater)
                     .momentum(Double.parseDouble(prop.getProperty("momentum", "0.9")))
                     .rmsDecay(Double.parseDouble(prop.getProperty("rmsDecay", "0.95")))

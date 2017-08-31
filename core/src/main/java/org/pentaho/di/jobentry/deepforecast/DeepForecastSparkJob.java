@@ -127,7 +127,6 @@ public class DeepForecastSparkJob {
         if (getConfigPath() != null) {
             prop.load(FileUtils.openInputStream(new File(getConfigPath())));
         }
-        setForecastSteps((Integer.parseInt(prop.getProperty("timeSeriesSize", "30")) - 1) + "");
 
         long id = System.currentTimeMillis() / 1000;
         Path check = Paths.get(resultsDir + File.separator + "check" + id + ".csv");
@@ -138,7 +137,7 @@ public class DeepForecastSparkJob {
         int nEpochs = Integer.parseInt(prop.getProperty("nEpochs", "50"));
         int batchSizePerWorker = 16;
         int miniBatchSize = /*Integer.parseInt(prop.getProperty("miniBatchSize", "32"))*/ batchSizePerWorker;
-        int hiddenNodes = Integer.parseInt(prop.getProperty("hiddenNodes", "10"));
+        int hiddenNodes = Integer.parseInt(prop.getProperty("hiddenNodes", "5"));
         int timeSeriesSize = Integer.parseInt(prop.getProperty("timeSeriesSize", "30"));
         int tBPTTLength = Integer.parseInt(prop.getProperty("tBPTTLength", "30"));
         int totalSize = rawStrings.size() - timeSeriesSize;
@@ -213,7 +212,7 @@ public class DeepForecastSparkJob {
                     .optimizationAlgo(OptimizationAlgorithm.STOCHASTIC_GRADIENT_DESCENT)
                     .iterations(1)
                     .weightInit(WeightInit.XAVIER)
-                    .learningRate(Double.parseDouble(prop.getProperty("learningRate", "0.01")))
+                    .learningRate(Double.parseDouble(prop.getProperty("learningRate", "0.001")))
                     .updater(updater)
                     .momentum(Double.parseDouble(prop.getProperty("momentum", "0.9")))
                     .rmsDecay(Double.parseDouble(prop.getProperty("rmsDecay", "0.95")))
