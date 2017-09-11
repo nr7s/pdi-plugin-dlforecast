@@ -16,6 +16,7 @@ Time series forecasting plugin for [Pentaho Data Integration](http://community.p
 ## Pre-requisites 
 * Maven, version 3+
 * Java JDK 1.8
+* [Pentaho Data Integration Kettle](http://community.pentaho.com/projects/data-integration/)
 * This [settings.xml](https://github.com/pentaho/maven-parent-poms/blob/master/maven-support-files/settings.xml) 
 in your <user-home>/.m2 directory
 
@@ -57,7 +58,7 @@ unzip kettle-deepforecast-plugin-8.0-SNAPSHOT.zip
 
 5. When the model is trained, the predictions are made and the respective check and forecast CSV's will be saved at the output path that you specified. Identified like checkXXXXXXXXXX.csv and forecastXXXXXXXXXX.csv, where XXXXXXXXXX is a numerical identifier to distinguish results in case you want generate them in the same folder.
 
-6. After that you can use your desired plotting tool to check the results. In the sample folder of this repository there's a simple python script to plot the results with. Plotting the results from the example before we would see a graph like this.
+6. After that you can use your desired plotting tool to check the results. In the sample folder of this repository there's a simple python script to plot the results with. Plotting the results from the example before we would see a graph like this. Warning: this python script is just an example. If you wish to use it make sure your have python and the imported modules installed in your environment.
 
 ![use4](https://user-images.githubusercontent.com/24592596/29708921-619be636-8982-11e7-8f58-34580c0e42d7.png)
 
